@@ -1,0 +1,25 @@
+{
+ "name": "Registro Horario Farmacia",
+ "short_name": "Horario Farmacia",
+ "start_url": "registro-farmacia.html",
+ "scope": "./",
+ "display": "standalone",
+ "background_color": "#26303C",
+ "theme_color": "#26303C",
+ "lang": "es",
+ "icons": [
+  {
+   "src": "farmacia-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any"
+  },
+  {
+   "src": "farmacia-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any"
+  }
+ ],
+ "id": "registro-farmacia"
+}
