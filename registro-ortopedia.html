@@ -133,6 +133,10 @@ td.paid{color:var(--gold-ink);font-weight:700}
 .hgrid th,.hgrid td{padding:5px 6px;text-align:left;font-size:.85rem;border-bottom:1px solid var(--line)}
 .hgrid th{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .hgrid input{padding:6px 8px}
+.vacrow{display:flex;justify-content:space-between;gap:10px;align-items:center;border-top:1px solid var(--line);padding-top:8px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.vacrow small{color:var(--muted)}
+td.vac,.vac{color:var(--gold-ink);font-weight:700}
+.mtable tr.vacd td{background:var(--gold-soft)}
 .ajemp{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--bg)}
 .ajemp .row2{display:grid;grid-template-columns:2fr 1fr;gap:10px}
 .ajemp .f{display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -177,12 +181,17 @@ td.paid{color:var(--gold-ink);font-weight:700}
   </header>
 
   <div class="banner" id="connBanner" hidden></div>
+  <section class="card" id="sinCon" hidden>
+    <h2>Esperando a la hoja de Google…</h2>
+    <p class="lead" style="margin:0">Este equipo ya tiene la dirección guardada, no hace falta volver a pegarla. La hoja no responde todavía: suele pasar al encender el ordenador, antes de que haya internet. Se reintenta sola cada pocos segundos.</p>
+    <div class="acts"><button class="btn" type="button" id="sinConRetry">Reintentar ahora</button><button class="btn sm ghost" type="button" id="sinConCambiar">Cambiar la dirección</button></div>
+  </section>
 
   <section class="card" id="conectar" hidden>
     <h2>Conectar con la hoja de Google</h2>
-    <p class="lead">Pega la dirección de la aplicación web de la hoja de Google de la tienda (empieza por https://script.google.com/ y termina en /exec). Solo hay que hacerlo una vez en cada equipo.</p>
+    <p class="lead">Pega la dirección del script de la hoja de Google: empieza por https://script.google.com/macros/s/ y termina en /exec. No es la dirección de la hoja de cálculo (docs.google.com). La encuentras en la hoja → Extensiones → Apps Script → Implementar → Gestionar implementaciones → URL de la aplicación web. Solo hay que hacerlo una vez en cada equipo.</p>
     <form id="conForm" class="setupgrid" autocomplete="off">
-      <div class="f" style="width:min(560px,100%)"><label for="conUrl">Dirección de la hoja</label><input id="conUrl" type="url" required placeholder="https://script.google.com/macros/s/…/exec"></div>
+      <div class="f" style="width:min(560px,100%)"><label for="conUrl">Dirección del script de Google (termina en /exec)</label><input id="conUrl" type="url" required placeholder="https://script.google.com/macros/s/…/exec"></div>
       <button class="btn" type="submit">Conectar</button>
     </form>
     <p class="lead" id="conMsg" style="margin:0"></p>
@@ -213,6 +222,7 @@ td.paid{color:var(--gold-ink);font-weight:700}
       <div class="acts" id="hActs"></div>
       <div id="hLocked" class="empty"><b>Solo para el gerente</b>Horas por día, totales de semana y mes, incidencias, correcciones y horario.<button class="btn sm" id="hOpen" type="button">Ver con PIN de gerente</button></div>
       <div id="hAj" hidden></div>
+      <div id="hVac" hidden></div>
       <div id="hRes" hidden></div>
       <div id="hCorr" hidden></div>
       <div id="hHist" hidden></div>
@@ -298,7 +308,9 @@ function toMin(h){var p=String(h).split(":");return (+p[0])*60+(+p[1])}
 function minOf(ts){var d=new Date(ts);return d.getHours()*60+d.getMinutes()}
 function fMin(m){var neg=m<0;m=Math.abs(Math.round(m));return (neg?"-":"")+Math.floor(m/60)+"h "+pad2(m%60)+"m"}
 function dow(dia){return new Date(dia+"T12:00:00").getDay()}
-function tramos(id,dia){var h=(H.cfg&&H.cfg.horario&&H.cfg.horario[id])||{};return (h[String(dow(dia))]||[]).filter(function(t){return t.i&&t.f})}
+function vacDe(id,dia){var v=(H.cfg&&H.cfg.vacaciones&&H.cfg.vacaciones[id])||[];return v.some(function(r){return dia>=r.a&&dia<=r.b})}
+function tramos(id,dia){return vacDe(id,dia)?[]:tramosHor(id,dia)}
+function tramosHor(id,dia){var h=(H.cfg&&H.cfg.horario&&H.cfg.horario[id])||{};return (h[String(dow(dia))]||[]).filter(function(t){return t.i&&t.f})}
 function tramosTxt(tr){return tr.length?tr.map(function(t){return t.i+"–"+t.f}).join(" y "):"Libre"}
 function analizar(id,dia,list){
   var fs=list.filter(function(f){return f.emp===id&&f.dia===dia&&!f.anulado}).sort(function(a,b){return a.ts-b.ts});
@@ -321,7 +333,7 @@ function analizar(id,dia,list){
     if(p.s){var sm=minOf(p.s.ts);if(sm<toMin(t.f)-tolS)inc.push("Salida anticipada "+(toMin(t.f)-sm)+" min")}
     else if(pasado||(dia===today&&nowM>toMin(t.f)+60))inc.push("Falta salida");
   });
-  if(!tr.length&&fs.length)inc.push("Día no previsto en horario");
+  if(!tr.length&&fs.length)inc.push(vacDe(id,dia)?"Fichaje en día de vacaciones":"Día no previsto en horario");
   return {fs:fs,pairs:pairs,worked:worked,ord:ord,comp:comp,prev:prev,inc:inc,dentro:!!cur,corr:fs.some(function(f){return f.origen==="correccion"})};
 }
 
@@ -343,7 +355,7 @@ function hRenderFichar(){
   var dia=hoy();
   box.innerHTML=emps().map(function(e){
     var a=analizar(e.id,dia,H.hoy),tr=tramos(e.id,dia),ok=!!(e.vinculo||e.pin);
-    return '<div class="emp"><div class="emp-head"><span class="av">'+esc(e.nombre.slice(0,1))+'</span><div><b>'+esc(e.nombre)+'</b><small>Hoy: '+tramosTxt(tr)+'</small></div><span class="state '+(a.dentro?'in':'out')+'">'+(a.dentro?'Trabajando':'Fuera')+'</span></div>'+
+    return '<div class="emp"><div class="emp-head"><span class="av">'+esc(e.nombre.slice(0,1))+'</span><div><b>'+esc(e.nombre)+'</b><small>Hoy: '+(vacDe(e.id,dia)?'<span class="vac">Vacaciones</span>':tramosTxt(tr))+'</small></div><span class="state '+(a.dentro?'in':'out')+'">'+(a.dentro?'Trabajando':'Fuera')+'</span></div>'+
       '<div class="times">'+(a.fs.length?a.fs.map(function(f){return '<span class="'+(f.tipo==="entrada"?"e":"s")+'">'+(f.tipo==="entrada"?"E ":"S ")+fHora(f.ts)+(f.origen==="correccion"?"*":"")+'</span>'}).join(""):'<span>Sin fichajes hoy</span>')+'</div>'+
       (ok?'<div class="fbtns"><button class="btn'+(a.dentro?' ghost':'')+'" type="button" data-fichar="entrada" data-emp="'+e.id+'">Entrada</button><button class="btn'+(a.dentro?'':' ghost')+'" type="button" data-fichar="salida" data-emp="'+e.id+'">Salida</button><button class="btn ghost" type="button" data-misho="'+e.id+'">Mis horas</button></div>'
          :'<p class="lead" style="margin:0">Falta asignarle PIN. Lo hace el gerente en Horario y empleadas.</p>')+'</div>';
@@ -373,15 +385,15 @@ function rangoTxt(w){return w.lunes.slice(0,7)===w.dom.slice(0,7)?(+w.lunes.slic
 function fDiaCorto(dia,key){return DSHORT[dow(dia)]+" "+dia.slice(8)+(dia.slice(0,7)!==key?" "+MESES[+dia.slice(5,7)-1].slice(0,3):"")}
 function semana(id,lunes,list){
   var today=hoy(),tol=(H.cfg&&H.cfg.tolerancia)||5,dias=[],real=0,contrato=0,inc=0;
-  for(var i=0;i<7;i++){var dia=addDias(lunes,i),a=analizar(id,dia,list);a.dia=dia;a.tr=tramos(id,dia);a.futuro=dia>today;dias.push(a);real+=a.worked;contrato+=a.prev;if(!a.futuro)inc+=a.inc.length}
+  for(var i=0;i<7;i++){var dia=addDias(lunes,i),a=analizar(id,dia,list);a.dia=dia;a.vac=vacDe(id,dia);a.lab=a.vac&&tramosHor(id,dia).length>0;a.tr=tramos(id,dia);a.futuro=dia>today;dias.push(a);real+=a.worked;contrato+=a.prev;if(!a.futuro)inc+=a.inc.length}
   var comp=real-contrato;if(comp<=tol)comp=0;
   return {lunes:lunes,dom:addDias(lunes,6),dias:dias,real:real,contrato:contrato,comp:comp,ord:real-comp,inc:inc};
 }
 /* mes: horas reales = días del mes; complementarias = semanas que terminan (domingo) en el mes */
 function resumenMes(id,key,list){
-  var ws=semanasMes(key).map(function(l){return semana(id,l,list)}),t={real:0,prev:0,comp:0,inc:0};
+  var ws=semanasMes(key).map(function(l){return semana(id,l,list)}),t={real:0,prev:0,comp:0,inc:0,vac:0,vacLab:0};
   ws.forEach(function(w){
-    w.dias.forEach(function(a){if(a.dia.slice(0,7)!==key||a.futuro)return;t.real+=a.worked;t.prev+=a.prev;t.inc+=a.inc.length});
+    w.dias.forEach(function(a){if(a.dia.slice(0,7)===key&&a.vac){t.vac++;if(a.lab)t.vacLab++}if(a.dia.slice(0,7)!==key||a.futuro)return;t.real+=a.worked;t.prev+=a.prev;t.inc+=a.inc.length});
     if(w.dom.slice(0,7)===key)t.comp+=w.comp;
   });
   t.ord=Math.max(0,t.real-t.comp);return {ws:ws,t:t};
@@ -394,10 +406,10 @@ function diasHead(adm){return '<thead><tr><th>Día</th>'+(adm?'<th>Horario</th>'
 function cell(v){return '<td class="'+(v==="—"?'miss':'')+'">'+v+'</td>'}
 function diaRow(a,key,adm){
   var otro=a.dia.slice(0,7)!==key,libre=!a.tr.length&&!a.fs.length,P=paresCols(a);
-  var cls=(a.dia===hoy()?"today":"")+(otro?" otro":"");
+  var cls=(a.dia===hoy()?"today":"")+(otro?" otro":"")+(a.vac?" vacd":"");
   var c4=P.c[1][1]+(P.extra?' <small>+ '+P.extra+'</small>':'');
-  return '<tr class="'+cls+'"><td>'+fDiaCorto(a.dia,key)+'</td>'+(adm?'<td>'+tramosTxt(a.tr)+'</td>':'')+
-    (libre?'<td colspan="4" class="libre">'+(a.futuro||adm?'':'Libre')+'</td>':cell(P.c[0][0])+cell(P.c[0][1])+cell(P.c[1][0])+'<td class="'+(P.c[1][1]==="—"?"miss":"")+'">'+c4+'</td>')+
+  return '<tr class="'+cls+'"><td>'+fDiaCorto(a.dia,key)+'</td>'+(adm?'<td'+(a.vac?' class="vac">Vacaciones':'>'+tramosTxt(a.tr))+'</td>':'')+
+    (libre?(a.vac?'<td colspan="4" class="vac">Vacaciones</td>':'<td colspan="4" class="libre">'+(a.futuro||adm?'':'Libre')+'</td>'):cell(P.c[0][0])+cell(P.c[0][1])+cell(P.c[1][0])+'<td class="'+(P.c[1][1]==="—"?"miss":"")+'">'+c4+'</td>')+
     '<td class="n">'+(a.worked?fMin(a.worked):'')+'</td>'+
     (adm?'<td class="inc">'+esc(a.inc.join(" · "))+'</td><td><button class="btn sm ghost" type="button" data-corr="'+a.dia+'"'+(a.futuro?' disabled':'')+'>Corregir</button></td>':'')+'</tr>';
 }
@@ -443,7 +455,7 @@ document.addEventListener("keydown",function(){if(H.mias)miasBump()});
 /* ---------- resumen protegido ---------- */
 function hBump(){clearTimeout(H.timer);H.timer=setTimeout(hLock,300000)}
 function hLock(){H.who=null;H.anioList=null;H.anioKey="";$("#hFold").open=false;H.corr=null;clearTimeout(H.timer);if(H.unsubMes){H.unsubMes();H.unsubMes=null}
-  $("#hLocked").hidden=false;["#hRes","#hCorr","#hAj","#hHist"].forEach(function(x){$(x).hidden=true;$(x).innerHTML=""});$("#hActs").innerHTML=""}
+  $("#hLocked").hidden=false;["#hRes","#hCorr","#hAj","#hHist","#hVac"].forEach(function(x){$(x).hidden=true;$(x).innerHTML=""});$("#hActs").innerHTML=""}
 document.addEventListener("pointerdown",function(){if(H.who)hBump()});
 function hAbrir(){H.who="admin";H.emp=(emps()[0]||{}).id||null;hBump();$("#hFold").open=true;
   $("#hLocked").hidden=true;$("#hRes").hidden=false;hSubMes(hoy().slice(0,7));hRenderActs();hRenderRes()}
@@ -464,20 +476,22 @@ function hRenderActs(){
     '<input type="month" id="hMes" value="'+H.mesKey+'" style="width:auto" aria-label="Mes">'+
     (downloads&&H.emp?'<button class="btn sm ghost" type="button" id="hPdf">'+PRINTER+'PDF del mes</button>':'')+
     '<button class="btn sm ghost" type="button" id="hAjBtn">Horario y empleadas</button>'+
+    (H.emp?'<button class="btn sm ghost" type="button" id="hVacBtn">Vacaciones</button>':'')+
     '<button class="btn sm ghost" type="button" id="hHistBtn">Historial</button>'+
     (downloads?'<button class="btn sm ghost" type="button" id="hBackup">'+DISK+'Copia de seguridad</button>':'')+
     '<button class="btn sm ghost" type="button" id="hConn">Cambiar hoja</button>'+
     '<button class="btn sm ghost" type="button" id="hLockBtn">Bloquear</button>';
 }
 $("#hActs").addEventListener("change",function(ev){
-  if(ev.target.id==="hMes"&&ev.target.value){H.corr=null;$("#hCorr").hidden=true;hSubMes(ev.target.value);hRenderRes()}
-  if(ev.target.id==="hEmp"){H.emp=ev.target.value;H.corr=null;$("#hCorr").hidden=true;hRenderRes()}
+  if(ev.target.id==="hMes"&&ev.target.value){H.corr=null;$("#hCorr").hidden=true;hSubMes(ev.target.value);hRenderRes();hRenderVac()}
+  if(ev.target.id==="hEmp"){H.emp=ev.target.value;H.corr=null;$("#hCorr").hidden=true;hRenderRes();hRenderVac()}
 });
 $("#hActs").addEventListener("click",function(ev){
   var b=ev.target.closest("button");if(!b)return;
   if(b.id==="hLockBtn")hLock();
   else if(b.id==="hConn"){if(window.confirm("¿Desconectar este equipo de la hoja de Google? Tendrás que volver a pegar la dirección.")){lsSet(APIKEY,null);location.reload()}}
   else if(b.id==="hPdf")hPdf(b);
+  else if(b.id==="hVacBtn"){var vv=$("#hVac");if(vv.hidden){vv.hidden=false;hRenderVac();try{vv.scrollIntoView({behavior:"smooth",block:"start"})}catch(e){}}else{vv.hidden=true;vv.innerHTML=""}}
   else if(b.id==="hBackup")hBackup(b);
   else if(b.id==="hAjBtn"){var aj=$("#hAj");if(aj.hidden)hAbrirAj();else{aj.hidden=true;aj.innerHTML=""}}
   else if(b.id==="hHistBtn"){var hh=$("#hHist");if(hh.hidden){hh.hidden=false;hRenderHist();try{hh.scrollIntoView({behavior:"smooth",block:"start"})}catch(e){}}else{hh.hidden=true;hh.innerHTML=""}}
@@ -492,13 +506,13 @@ function hRenderAnio(){
   var y=H.mesKey.slice(0,4);
   if(H.anioKey!==y||!H.anioList){hCargarAnio(y);return '<div class="empty">Calculando el cómputo anual…</div>'}
   var r=H.rango,list=H.anioList.filter(function(f){return f.dia<r.a||f.dia>r.b}).concat(hListaMes());
-  var today=hoy(),T={p:0,r:0,o:0,c:0},rows="";
+  var today=hoy(),T={p:0,r:0,o:0,c:0,v:0,vl:0},rows="";
   for(var m=1;m<=12;m++){var key=y+"-"+pad2(m);if(key+"-01">today)break;
-    var t=resumenMes(H.emp,key,list).t;T.p+=t.prev;T.r+=t.real;T.o+=t.ord;T.c+=t.comp;
-    rows+='<tr'+(key===H.mesKey?' class="today"':'')+'><td>'+MESES[m-1]+'</td><td class="n">'+fMin(t.prev)+'</td><td class="n">'+fMin(t.real)+'</td><td class="n">'+fMin(t.ord)+'</td><td class="n '+(t.ord-t.prev<0?'neg':'pos')+'">'+fMin(t.ord-t.prev)+'</td><td class="n paid">'+(t.comp?fMin(t.comp):'—')+'</td></tr>'}
+    var t=resumenMes(H.emp,key,list).t;T.p+=t.prev;T.r+=t.real;T.o+=t.ord;T.c+=t.comp;T.v+=t.vac;T.vl+=t.vacLab;
+    rows+='<tr'+(key===H.mesKey?' class="today"':'')+'><td>'+MESES[m-1]+'</td><td class="n">'+fMin(t.prev)+'</td><td class="n">'+fMin(t.real)+'</td><td class="n">'+fMin(t.ord)+'</td><td class="n '+(t.ord-t.prev<0?'neg':'pos')+'">'+fMin(t.ord-t.prev)+'</td><td class="n paid">'+(t.comp?fMin(t.comp):'—')+'</td><td class="n">'+(t.vac?t.vacLab+' <small>('+t.vac+')</small>':'—')+'</td></tr>'}
   return '<h3 class="subh">Cómputo anual '+y+' <small>las complementarias no suman al cómputo</small></h3>'+
-    '<div class="tablewrap"><table class="log mtable"><thead><tr><th>Mes</th><th class="n">Previstas</th><th class="n">Reales</th><th class="n">Ordinarias</th><th class="n">Diferencia</th><th class="n">Complementarias</th></tr></thead><tbody>'+rows+'</tbody>'+
-    '<tfoot><tr><td>Total '+y+'</td><td class="n">'+fMin(T.p)+'</td><td class="n">'+fMin(T.r)+'</td><td class="n">'+fMin(T.o)+'</td><td class="n '+(T.o-T.p<0?'neg':'pos')+'">'+fMin(T.o-T.p)+'</td><td class="n paid">'+fMin(T.c)+'</td></tr></tfoot></table></div>'+
+    '<div class="tablewrap"><table class="log mtable"><thead><tr><th>Mes</th><th class="n">Previstas</th><th class="n">Reales</th><th class="n">Ordinarias</th><th class="n">Diferencia</th><th class="n">Complementarias</th><th class="n">Vacaciones <small>lab. (nat.)</small></th></tr></thead><tbody>'+rows+'</tbody>'+
+    '<tfoot><tr><td>Total '+y+'</td><td class="n">'+fMin(T.p)+'</td><td class="n">'+fMin(T.r)+'</td><td class="n">'+fMin(T.o)+'</td><td class="n '+(T.o-T.p<0?'neg':'pos')+'">'+fMin(T.o-T.p)+'</td><td class="n paid">'+fMin(T.c)+'</td><td class="n">'+T.vl+' <small>('+T.v+')</small></td></tr></tfoot></table></div>'+
     '<p class="lead" style="margin:0">Complementarias: horas de cada semana (lunes a domingo) que pasan del horario de contrato. Se cuentan en el mes en que termina la semana.</p>';
 }
 function hRenderRes(){
@@ -514,6 +528,7 @@ function hRenderRes(){
     return head+'<tr class="wkdays"><td colspan="7"><div class="tablewrap"><table class="log mtable">'+diasHead(true)+'<tbody>'+w.dias.map(function(a){return diaRow(a,key,true)}).join("")+'</tbody></table></div></td></tr>';
   }).join("");
   box.innerHTML='<p class="lead" style="margin:0 0 8px"><b style="color:var(--ink)">'+esc(vName(H.emp))+'</b> · '+MESES[m-1]+' '+y+(hListaMes().some(function(f){return f.emp===H.emp&&f.origen==="correccion"})?' · * fichaje corregido por la gerente':'')+'</p>'+
+    (t.vac?'<p class="lead" style="margin:0 0 8px"><span class="vac">Vacaciones en '+MESES[m-1]+': '+t.vac+' día'+(t.vac>1?'s':'')+' naturales · '+t.vacLab+' laborable'+(t.vacLab!==1?'s':'')+'</span> · no cuentan como horas previstas ni como incidencias</p>':'')+
     '<div class="tiles"><div><span>Horas reales del mes</span><b>'+fMin(t.real)+'</b><small>días del 1 al '+diasMes(key).length+' de '+MESES[m-1]+(key===today.slice(0,7)?', hasta hoy':'')+'</small></div>'+
     '<div><span>Ordinarias</span><b>'+fMin(t.ord)+'</b><small>de '+fMin(t.prev)+' previstas'+(falta?' · faltan '+fMin(falta):'')+'</small></div>'+
     '<div class="paidt"><span>Complementarias</span><b>'+fMin(t.comp)+'</b><small>semanas que terminan en '+MESES[m-1]+' · a pagar en nómina</small></div>'+
@@ -553,6 +568,52 @@ $("#hCorr").addEventListener("click",async function(ev){
       await log("horario","admin","Anula "+f.tipo+" "+fHora(f.ts)+" de "+who+" el "+fFecha(dia)+" · "+motivo);toast("Fichaje anulado")}
     $("#cMotivo").value="";
   }catch(x){toast(failMsg(x))}finally{b.disabled=false}
+});
+
+/* ---------- vacaciones (solo gerente) ---------- */
+function vacCuenta(id,r){var nat=0,lab=0;for(var d=r.a;d<=r.b;d=addDias(d,1)){nat++;if(tramosHor(id,d).length)lab++}return {nat:nat,lab:lab}}
+function vacLista(id){return (((H.cfg&&H.cfg.vacaciones)||{})[id]||[]).slice().sort(function(x,y){return x.a<y.a?-1:1})}
+function hRenderVac(){
+  var box=$("#hVac");if(!box||box.hidden||H.who!=="admin")return;
+  if(!H.emp){box.innerHTML="";return}
+  var y=H.mesKey.slice(0,4),list=vacLista(H.emp),delAnio=list.filter(function(r){return r.a.slice(0,4)===y||r.b.slice(0,4)===y}),tn=0,tl=0;
+  delAnio.forEach(function(r){var a=r.a<y+"-01-01"?y+"-01-01":r.a,b=r.b>y+"-12-31"?y+"-12-31":r.b,c=vacCuenta(H.emp,{a:a,b:b});tn+=c.nat;tl+=c.lab});
+  var d0=H.vacDesde||"",d1=H.vacHasta||"";
+  box.innerHTML='<div class="corr"><div class="listhead"><h3 style="font-size:1rem">Vacaciones de '+esc(vName(H.emp))+'</h3><span class="lead" style="margin:0">'+y+': <b class="vac">'+tl+' laborables</b> ('+tn+' naturales)</span></div>'+
+    '<p class="lead" style="margin:0">Marca del primer al último día. Esos días no cuentan como horas previstas ni como incidencias, y salen como «Vacaciones» en el resumen y en el PDF. Para otra empleada, cámbiala en el selector de arriba.</p>'+
+    '<div class="row"><div class="f"><label for="vDesde">Desde</label><input type="date" id="vDesde" value="'+d0+'"></div><div class="f"><label for="vHasta">Hasta (incluido)</label><input type="date" id="vHasta" value="'+d1+'"></div><button class="btn" type="button" id="vAdd">Añadir vacaciones</button></div>'+
+    (list.length?list.map(function(r,i){var c=vacCuenta(H.emp,r);return '<div class="vacrow"><span><b>'+(r.a===r.b?fFecha(r.a):fFecha(r.a)+' – '+fFecha(r.b))+'</b> <small>'+c.lab+' laborable'+(c.lab!==1?'s':'')+' · '+c.nat+' natural'+(c.nat!==1?'es':'')+'</small></span><button class="btn sm ghost" type="button" data-vdel="'+r.a+'|'+r.b+'">Quitar</button></div>'}).join(""):'<div class="empty">Sin vacaciones marcadas</div>')+
+    '</div>';
+}
+async function hVacGuardar(nueva,txt){
+  var cfg=JSON.parse(JSON.stringify(H.cfg||{empleados:[],horario:{},tolerancia:5}));cfg.vacaciones=cfg.vacaciones||{};
+  if(nueva.length)cfg.vacaciones[H.emp]=nueva;else delete cfg.vacaciones[H.emp];
+  await db.doc("config/horario").set(cfg);H.cfg=cfg;
+  try{await log("horario","admin",txt+" · "+vName(H.emp))}catch(x){}
+  hRenderFichar();hRenderRes();hRenderVac();
+}
+$("#hVac").addEventListener("input",function(ev){if(ev.target.id==="vDesde"){H.vacDesde=ev.target.value;var h=$("#vHasta");if(h&&(!h.value||h.value<ev.target.value)){h.value=ev.target.value;H.vacHasta=h.value}}if(ev.target.id==="vHasta")H.vacHasta=ev.target.value});
+$("#hVac").addEventListener("click",async function(ev){
+  if(H.who!=="admin"||!db)return;
+  var b=ev.target.closest("button");if(!b)return;
+  if(b.id==="vAdd"){
+    var a=$("#vDesde").value,z=$("#vHasta").value||a;
+    if(!a){toast("Elige el primer día de vacaciones");return}
+    if(z<a){toast("El último día no puede ser anterior al primero");return}
+    var list=vacLista(H.emp);
+    if(list.some(function(r){return a<=r.b&&z>=r.a})){toast("Esas fechas se solapan con unas vacaciones ya marcadas");return}
+    b.disabled=true;
+    try{list.push({a:a,b:z});await hVacGuardar(list,"Vacaciones "+(a===z?fFecha(a):fFecha(a)+" – "+fFecha(z)));H.vacDesde=H.vacHasta="";hRenderVac();toast("Vacaciones guardadas")}
+    catch(x){toast(failMsg(x))}finally{b.disabled=false}
+    return;
+  }
+  if(b.dataset.vdel){
+    var p=b.dataset.vdel.split("|");
+    if(!window.confirm("¿Quitar las vacaciones del "+fFecha(p[0])+(p[0]===p[1]?"":" al "+fFecha(p[1]))+"?"))return;
+    b.disabled=true;
+    try{await hVacGuardar(vacLista(H.emp).filter(function(r){return !(r.a===p[0]&&r.b===p[1])}),"Vacaciones quitadas "+fFecha(p[0])+(p[0]===p[1]?"":" – "+fFecha(p[1])));toast("Vacaciones quitadas")}
+    catch(x){toast(failMsg(x));b.disabled=false}
+  }
 });
 
 /* ---------- horario y empleadas ---------- */
@@ -657,7 +718,7 @@ async function hPdf(btn){
       w.dias.forEach(function(a){
         var P=paresCols(a),libre=!a.tr.length&&!a.fs.length,otro=a.dia.slice(0,7)!==key;
         var c4=P.c[1][1]+(P.extra?" + "+P.extra:"");
-        var row=[fDiaCorto(a.dia,key),tramosTxt(a.tr).replace(/–/g,"-"),P.c[0][0],P.c[0][1],P.c[1][0],c4.replace(/–/g,"-"),a.worked?fMin(a.worked):"",a.futuro?"":a.inc.join(". ")];
+        var row=[fDiaCorto(a.dia,key),a.vac?"Vacaciones":tramosTxt(a.tr).replace(/–/g,"-"),P.c[0][0],P.c[0][1],P.c[1][0],c4.replace(/–/g,"-"),a.worked?fMin(a.worked):"",a.futuro?"":a.inc.join(". ")];
         if(otro)row=row.map(function(c){return {content:c,styles:{textColor:[150,143,132]}}});
         body.push(row);
       });
@@ -675,6 +736,7 @@ async function hPdf(btn){
     doc.setFontSize(9.5);doc.setTextColor(29,29,27);
     doc.text("Resumen de "+MESES[m-1]+" (días del mes): horas reales "+fMin(T.real)+" · ordinarias "+fMin(T.ord)+" de "+fMin(T.prev)+" previstas.",10,yy+6);
     doc.text("Horas complementarias de las semanas que terminan en "+MESES[m-1]+": "+fMin(T.comp)+" (se abonan en nómina; no computan en el cómputo anual).",10,yy+11);yy+=11;
+    if(T.vac){doc.text("Vacaciones en "+MESES[m-1]+": "+T.vac+" días naturales ("+T.vacLab+" laborables). No cuentan como horas previstas.",10,yy+5);yy+=5}
     doc.setFontSize(10);
     doc.text("Firma de la trabajadora",30,yy+22);doc.text("Firma de la empresa",135,yy+22);
     doc.line(14,yy+18,90,yy+18);doc.line(120,yy+18,196,yy+18);
@@ -720,6 +782,7 @@ $("#setupForm").addEventListener("submit",async function(ev){
 
 function showApp(){
   if(S.cfg===undefined)return;
+  $("#sinCon").hidden=true;$("#conectar").hidden=true;
   $("#setup").hidden=!!S.cfg||!db;$("#main").hidden=!S.cfg;
   hRenderFichar();if(H.who){hRenderActs();hRenderRes()}
 }
@@ -762,12 +825,15 @@ async function runSync(){
     try{var j=await call({accion:"sync",consultas:list.map(function(s){return s.q})});
       syncFallos=0;banner("");
       list.forEach(function(s,i){if(s.alive){try{s.cb(j.resultados[i])}catch(e){console.error(e)}}});
-    }catch(e){syncFallos++;banner("Sin conexión con la hoja de Google. Se volverá a intentar sola en unos segundos.");if(syncFallos===1)list.forEach(function(s){if(s.err)try{s.err(e)}catch(x){}})}
+    }catch(e){syncFallos++;banner("Sin conexión con la hoja de Google. Se volverá a intentar sola en unos segundos.");if(syncFallos<=20)setTimeout(runSync,syncFallos<=6?5000:15000);if(syncFallos===1)list.forEach(function(s){if(s.err)try{s.err(e)}catch(x){}})}
   }
   syncing=false;if(again){again=false;runSync()}
 }
 setInterval(function(){if(!document.hidden)runSync()},30000);
 document.addEventListener("visibilitychange",function(){if(!document.hidden)runSync()});
+window.addEventListener("online",function(){runSync()});
+$("#sinConRetry").addEventListener("click",function(){var b=this;b.disabled=true;b.textContent="Conectando…";runSync();setTimeout(function(){b.disabled=false;b.textContent="Reintentar ahora"},4000)});
+$("#sinConCambiar").addEventListener("click",function(){$("#sinCon").hidden=true;$("#conectar").hidden=false;var i=$("#conUrl");i.value=API||"";i.focus()});
 var LOCALDL={save:async function(o){
   var type=o.data instanceof ArrayBuffer?"application/pdf":/\.csv$/.test(o.filename)?"text/csv;charset=utf-8":"application/json";
   var url=URL.createObjectURL(new Blob([o.data],{type:type})),a=document.createElement("a");
@@ -777,10 +843,11 @@ var LOCALDL={save:async function(o){
 }};
 $("#conForm").addEventListener("submit",async function(ev){
   ev.preventDefault();var url=($("#conUrl").value||"").trim(),m=$("#conMsg"),b=ev.target.querySelector("button");
+  if(/docs\.google\.com/.test(url)){m.textContent="Esa es la dirección de la hoja de cálculo. Aquí va la del script: en la hoja, Extensiones → Apps Script → Implementar → Gestionar implementaciones → URL de la aplicación web (termina en /exec).";return}
   if(!/^https:\/\/script\.google(usercontent)?\.com\/.+/.test(url)){m.textContent="La dirección debe empezar por https://script.google.com/ y terminar en /exec.";return}
   b.disabled=true;m.textContent="Comprobando la conexión…";API=url;
   try{await call({accion:"ping"});lsSet(APIKEY,url);m.textContent="";$("#conectar").hidden=true;start()}
-  catch(e){API=null;m.textContent="No se pudo conectar. Revisa que la dirección esté completa y que la hoja esté implementada con acceso «Cualquier usuario»."}
+  catch(e){API=null;m.textContent="No se pudo conectar. Revisa que la dirección esté completa, que este equipo tenga internet y que la implementación tenga acceso «Cualquier usuario». Si en otro ordenador funciona con la misma dirección, la red de este equipo puede estar bloqueando script.google.com."}
   finally{b.disabled=false}
 });
 $("#impFile").addEventListener("change",async function(){
@@ -800,8 +867,8 @@ async function start(){
   db=GDB;downloads=LOCALDL;
   var timer=setTimeout(function(){banner("La hoja de Google tarda en responder. Los datos pueden no estar al día.")},12000);
   db.doc("config/main").onSnapshot(function(s){clearTimeout(timer);S.cfg=s.exists?s.data():null;showApp()},
-    function(){clearTimeout(timer);if(S.cfg===undefined){S.cfg=null;$("#main").hidden=true;$("#setup").hidden=true;$("#conectar").hidden=false;$("#conMsg").textContent="No se pudo conectar con la hoja. Comprueba internet o vuelve a pegar la dirección."}});
-  db.doc("config/horario").onSnapshot(function(s){H.cfg=s.exists?s.data():null;hRenderFichar();if(H.who){hRenderActs();hRenderRes()}},function(){});
+    function(){clearTimeout(timer);if(S.cfg===undefined){$("#main").hidden=true;$("#setup").hidden=true;$("#sinCon").hidden=false}});
+  db.doc("config/horario").onSnapshot(function(s){H.cfg=s.exists?s.data():null;hRenderFichar();if(H.who){hRenderActs();hRenderRes();hRenderVac()}},function(){});
   hSubHoy();
   db.collection("registro").orderBy("ts","desc").limit(500).onSnapshot(function(s){S.reg=snapList(s);hRenderHist()},function(){});
 }
