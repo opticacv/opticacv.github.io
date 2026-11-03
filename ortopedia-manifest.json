@@ -2,7 +2,7 @@
  "name": "Registro Horario Ortopedia",
  "short_name": "Horario Orto",
  "start_url": "registro-ortopedia.html",
- "scope": "./",
+ "scope": "registro-ortopedia",
  "display": "standalone",
  "background_color": "#1D1D1B",
  "theme_color": "#1D1D1B",

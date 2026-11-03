@@ -2,7 +2,7 @@
  "name": "Registro Horario Farmacia",
  "short_name": "Horario Farmacia",
  "start_url": "registro-farmacia.html",
- "scope": "./",
+ "scope": "registro-farmacia",
  "display": "standalone",
  "background_color": "#26303C",
  "theme_color": "#26303C",
