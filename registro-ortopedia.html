@@ -129,6 +129,7 @@ td.paid{color:var(--gold-ink);font-weight:700}
 .corr .row .f{display:flex;flex-direction:column;gap:4px;min-width:120px;flex:1}
 .fl{display:flex;justify-content:space-between;gap:10px;align-items:center;border-top:1px solid var(--line);padding-top:8px;font-variant-numeric:tabular-nums}
 .fl.anul{color:var(--muted);text-decoration:line-through}
+.hgrid .cpd{white-space:nowrap}
 .hgrid{width:100%;border-collapse:collapse;min-width:520px}
 .hgrid th,.hgrid td{padding:5px 6px;text-align:left;font-size:.85rem;border-bottom:1px solid var(--line)}
 .hgrid th{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
@@ -163,7 +164,7 @@ td.vac,.vac{color:var(--gold-ink);font-weight:700}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 
-<div class="wrap">
+<div class="wrap" lang="es">
   <header class="top">
     <svg class="seal" viewBox="0 0 400 400" role="img" aria-label="Ortopedia Centro Técnico">
       <defs><path id="or-t" d="M 65,200 A 135 135 0 0 1 335,200"/><path id="or-b" d="M 50,200 A 150 150 0 0 0 350,200"/></defs>
@@ -230,7 +231,7 @@ td.vac,.vac{color:var(--gold-ink);font-weight:700}
   </div>
 </div>
 
-<div class="scrim" id="pinScrim" hidden>
+<div class="scrim" id="pinScrim" lang="es" hidden>
   <div class="pinbox" role="dialog" aria-modal="true" aria-labelledby="pinTitle">
     <h2 id="pinTitle">Firma con tu PIN</h2>
     <p id="pinSub"></p>
@@ -243,6 +244,7 @@ td.vac,.vac{color:var(--gold-ink);font-weight:700}
 <div class="toast" id="toast" hidden></div>
 
 <script>
+try{document.documentElement.lang="es"}catch(e){}
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s)};
@@ -358,10 +360,15 @@ function hRenderFichar(){
     return '<div class="emp"><div class="emp-head"><span class="av">'+esc(e.nombre.slice(0,1))+'</span><div><b>'+esc(e.nombre)+'</b><small>Hoy: '+(vacDe(e.id,dia)?'<span class="vac">Vacaciones</span>':tramosTxt(tr))+'</small></div><span class="state '+(a.dentro?'in':'out')+'">'+(a.dentro?'Trabajando':'Fuera')+'</span></div>'+
       '<div class="times">'+(a.fs.length?a.fs.map(function(f){return '<span class="'+(f.tipo==="entrada"?"e":"s")+'">'+(f.tipo==="entrada"?"E ":"S ")+fHora(f.ts)+(f.origen==="correccion"?"*":"")+'</span>'}).join(""):'<span>Sin fichajes hoy</span>')+'</div>'+
       (ok?'<div class="fbtns"><button class="btn'+(a.dentro?' ghost':'')+'" type="button" data-fichar="entrada" data-emp="'+e.id+'">Entrada</button><button class="btn'+(a.dentro?'':' ghost')+'" type="button" data-fichar="salida" data-emp="'+e.id+'">Salida</button><button class="btn ghost" type="button" data-misho="'+e.id+'">Mis horas</button></div>'
-         :'<p class="lead" style="margin:0">Falta asignarle PIN. Lo hace el gerente en Horario y empleadas.</p>')+'</div>';
+         :'<p class="lead" style="margin:0">Falta ponerle nombre, PIN y horario.</p><div class="fbtns" style="grid-template-columns:1fr"><button class="btn gold" type="button" data-edit="'+e.id+'">Completar datos</button></div>')+
+      (ok?'<button class="btn sm ghost" type="button" data-edit="'+e.id+'" style="align-self:flex-start">Editar nombre, PIN u horario</button>':'')+'</div>';
   }).join("");
 }
+function hEditEmp(id){var go=function(){var c=document.querySelector('#hAj .ajemp[data-emp="'+id+'"]');if(!c)return;try{c.scrollIntoView({behavior:"smooth",block:"start"})}catch(e){}var n=$("#hn_"+id);if(n){setTimeout(function(){n.focus();n.select()},350)}};
+  if(H.who==="admin"){hAbrirAj();go();return}
+  askPin({title:"Editar empleada",sub:vName(id)+" · PIN de gerente",allowed:["admin"],onOk:function(){hAbrir();hAbrirAj();go()}})}
 $("#hFichar").addEventListener("click",function(ev){
+  var ed=ev.target.closest("button[data-edit]");if(ed){hEditEmp(ed.dataset.edit);return}
   var mh=ev.target.closest("button[data-misho]");
   if(mh){var mid=mh.dataset.misho;askPin({title:"Ver mis horas",sub:vName(mid)+" · solo lectura",allowed:[mid],onOk:function(){miasOpen(mid)}});return}
   var b=ev.target.closest("button[data-fichar]");if(!b||!db)return;
@@ -620,20 +627,28 @@ $("#hVac").addEventListener("click",async function(ev){
 function hRenderAj(){
   var list=emps();
   $("#hAj").innerHTML='<div class="corr"><div class="listhead"><h3 style="font-size:1rem">Horario y empleadas</h3><button class="btn sm ghost" type="button" data-aj="add">Añadir empleada</button></div>'+
-    '<p class="lead" style="margin:0">Jornada partida: rellena los dos tramos de cada día. Deja vacío lo que no se trabaja.</p>'+
+    '<p class="lead" style="margin:0">Escribe el nombre y el PIN de cada empleada y su horario. Jornada partida: rellena los dos tramos de cada día; deja vacío lo que no se trabaja. Al terminar pulsa «Guardar horario».</p>'+
     (list.length?'':'<div class="empty"><b>Sin empleadas</b>Pulsa «Añadir empleada» para dar de alta la primera.</div>')+
     list.map(function(e){var h=(H.cfg.horario||{})[e.id]||{};
-      return '<div class="ajemp" data-emp="'+e.id+'"><div class="row2"><div class="f"><label for="hn_'+e.id+'">Nombre</label><input id="hn_'+e.id+'" value="'+esc(e.nombre)+'" maxlength="60"></div>'+
+      return '<div class="ajemp" data-emp="'+e.id+'"><div class="row2"><div class="f"><label for="hn_'+e.id+'">Nombre</label><input id="hn_'+e.id+'" value="'+esc(e.nombre)+'" maxlength="60" lang="es" spellcheck="true" autocorrect="on" autocapitalize="words" autocomplete="off"></div>'+
         '<div class="f"><label for="hp_'+e.id+'">'+(e.vinculo?'PIN propio (ahora ficha con su PIN de la agenda)':e.pin?'Nuevo PIN':'PIN (4 cifras)')+'</label><input id="hp_'+e.id+'" type="password" inputmode="numeric" maxlength="4" placeholder="'+(e.pin||e.vinculo?'vacío = no cambiar':'')+'"></div></div>'+
-        '<div class="tablewrap"><table class="hgrid"><thead><tr><th>Día</th><th>Mañana entra</th><th>Mañana sale</th><th>Tarde entra</th><th>Tarde sale</th></tr></thead><tbody>'+
-        ORDEN.map(function(d){var t=h[String(d)]||[];var v=function(i,k){return t[i]&&t[i][k]?t[i][k]:""};
-          return '<tr><td><b>'+DLONG[d]+'</b></td>'+[["0","i"],["0","f"],["1","i"],["1","f"]].map(function(x){return '<td><input type="time" id="h_'+e.id+'_'+d+'_'+x[0]+x[1]+'" value="'+v(+x[0],x[1])+'"></td>'}).join("")+'</tr>'}).join("")+
+        '<div class="acts"><button class="btn sm ghost" type="button" data-cp="lv" data-e="'+e.id+'">Copiar el lunes de martes a viernes</button></div>'+
+        '<div class="tablewrap"><table class="hgrid"><thead><tr><th>Día</th><th>Mañana entra</th><th>Mañana sale</th><th>Tarde entra</th><th>Tarde sale</th><th></th></tr></thead><tbody>'+
+        ORDEN.map(function(d,k){var t=h[String(d)]||[];var v=function(i,k){return t[i]&&t[i][k]?t[i][k]:""};
+          return '<tr><td><b>'+DLONG[d]+'</b></td>'+[["0","i"],["0","f"],["1","i"],["1","f"]].map(function(x){return '<td><input type="time" id="h_'+e.id+'_'+d+'_'+x[0]+x[1]+'" value="'+v(+x[0],x[1])+'"></td>'}).join("")+
+            '<td>'+(k<ORDEN.length-1?'<button class="btn sm ghost cpd" type="button" data-cp="next" data-e="'+e.id+'" data-k="'+k+'" title="Copiar al '+DLONG[ORDEN[k+1]].toLowerCase()+'" aria-label="Copiar este día al '+DLONG[ORDEN[k+1]].toLowerCase()+'">Copiar ↓</button>':'')+'</td></tr>'}).join("")+
         '</tbody></table></div></div>';}).join("")+
     '<div class="row"><div class="f" style="max-width:200px"><label for="hTol">Margen de entrada (minutos)</label><input id="hTol" type="number" min="0" max="30" value="'+((H.cfg&&H.cfg.tolerancia)||5)+'"></div><div class="f" style="max-width:200px"><label for="hTolS">Margen de salida (minutos)</label><input id="hTolS" type="number" min="0" max="60" value="'+(H.cfg&&H.cfg.tolSalida!=null?H.cfg.tolSalida:((H.cfg&&H.cfg.tolerancia)||5))+'"></div><button class="btn" type="button" data-aj="save">Guardar horario</button></div>'+
     '<p class="lead" style="margin:0">Entrada: un retraso dentro del margen no cuenta como incidencia. Salida: salir antes dentro del margen no es incidencia, y si se queda después de su hora sin pasar del margen, esos minutos no cuentan como horas trabajadas ni como complementarias.</p>'+
     '<div class="row" style="border-top:1px solid var(--line);padding-top:12px"><div class="f" style="max-width:220px"><label for="hAdm">Nuevo PIN de gerente</label><input id="hAdm" type="password" inputmode="numeric" maxlength="4"></div><button class="btn sm ghost" type="button" data-aj="admin">Cambiar PIN de gerente</button></div></div>';
 }
+function hCopyDay(eid,from,to){["0i","0f","1i","1f"].forEach(function(x){var a=$("#h_"+eid+"_"+from+"_"+x),z=$("#h_"+eid+"_"+to+"_"+x);if(a&&z)z.value=a.value})}
 $("#hAj").addEventListener("click",async function(ev){
+  var c=ev.target.closest("button[data-cp]");
+  if(c&&H.who==="admin"){var eid=c.dataset.e;
+    if(c.dataset.cp==="next"){var k=+c.dataset.k;hCopyDay(eid,ORDEN[k],ORDEN[k+1]);toast("Copiado al "+DLONG[ORDEN[k+1]].toLowerCase()+" · pulsa «Guardar horario»")}
+    else{var lun=ORDEN.filter(function(d){return d===1})[0];[2,3,4,5].forEach(function(d){if(ORDEN.indexOf(d)>=0)hCopyDay(eid,lun,d)});toast("Lunes copiado de martes a viernes · pulsa «Guardar horario»")}
+    return}
   var b=ev.target.closest("button[data-aj]");if(!b||H.who!=="admin")return;
   if(b.dataset.aj==="admin"){
     var np=($("#hAdm").value||"").trim();if(!/^\d{4}$/.test(np)){toast("El PIN debe tener 4 cifras");return}
