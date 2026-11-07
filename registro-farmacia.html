@@ -857,7 +857,7 @@ $("#impFile").addEventListener("change",async function(){
 async function start(){
   var hm=location.hash.match(/[#&]hoja=([^&]+)/);
   if(hm){lsSet(APIKEY,decodeURIComponent(hm[1]));try{history.replaceState(null,"",location.pathname)}catch(e){}}
-  API=lsGet(APIKEY);
+  API=lsGet(APIKEY)||"https://script.google.com/macros/s/AKfycbyFB5GEGZ_1n-pjeCvnDb9BMsmTpTj7DHV6gE969gQ4kY_oqsDggQbAS6IdnhI94ec/exec";
   if(!API){$("#conectar").hidden=false;$("#main").hidden=true;$("#setup").hidden=true;return}
   db=GDB;downloads=LOCALDL;
   var timer=setTimeout(function(){banner("La hoja de Google tarda en responder. Los datos pueden no estar al día.")},12000);
