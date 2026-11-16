@@ -251,6 +251,7 @@
           <option value="sug">Solo sugeridos</option>
         </select>
         <select id="fMotivo"><option value="">Todos los motivos</option></select>
+        <select id="fOrden" aria-label="Ordenar"><option value="veces">Ordenar por veces</option><option value="euros">Ordenar por venta perdida (€)</option></select>
         <input id="fTexto" placeholder="Buscar…" style="flex:1 1 160px">
         <button class="btn ghost sm" id="bCopy" type="button">Copiar para Excel</button>
       </div>
@@ -260,7 +261,7 @@
 
     <div class="card">
       <div class="tablewrap"><table>
-        <thead><tr><th>#</th><th>Producto</th><th class="num">Veces</th><th class="num hide-m">Días</th><th class="hide-m">Última</th><th>Estado</th></tr></thead>
+        <thead><tr><th>#</th><th>Producto</th><th class="num">Veces / €</th><th class="num hide-m">Días</th><th class="hide-m">Última</th><th>Estado</th></tr></thead>
         <tbody id="tRank"></tbody>
       </table></div>
       <div class="hint" id="rankHint"></div>
@@ -342,6 +343,17 @@
         <button class="btn danger sm" id="bCatDel" type="button">Borrar listado</button>
       </div>
       <div class="hint" id="catInfo"></div>
+    </div>
+
+    <div class="card">
+      <h2>Precios (PVP)</h2>
+      <p class="mini" style="margin-top:0">Elige un archivo con <b>código nacional</b> y <b>precio</b>: el CSV del Nomenclátor del Ministerio (en <a href="https://www.sanidad.gob.es/profesionales/nomenclator.do" target="_blank" rel="noopener">sanidad.gob.es → Nomenclátor</a>, abajo, «Formato CSV»), que trae el PVP con IVA de los medicamentos financiados, o una exportación de Farmatic o de tu distribuidor con los precios de parafarmacia. La app pone el PVP a los productos del listado que coincidan y añade los que falten. También puedes escribir el PVP a mano en cada producto, con «Editar».</p>
+      <div class="row">
+        <input type="file" id="pvpFile" accept=".csv,.txt,.tsv">
+        <select id="pvpTipo" aria-label="Tipo de los productos nuevos"><option value="">Productos nuevos: tipo según el archivo</option><option value="esp">Productos nuevos: Especialidad</option><option value="para">Productos nuevos: Parafarmacia</option></select>
+        <button class="btn" id="bPvp" type="button">Cargar precios</button>
+      </div>
+      <div class="hint" id="pvpInfo"></div>
     </div>
     </div>
   </section>
@@ -431,6 +443,10 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
     return null;
   }
   const cleanCn = c => { const d = String(c||"").replace(/\D/g, ""); return d.length >= 6 ? d.slice(0,6) : d; };
+  // PVP: número en euros (o null). Acepta "5,95", "5.95", "5,95 €"
+  const aPvp = v => { const x = parseFloat(String(v ?? "").replace(/[^\d,.\-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".")); return isFinite(x) && x > 0 ? Math.round(x * 100) / 100 : null; };
+  const eur = x => x == null ? "" : x.toLocaleString("es-ES", { style:"currency", currency:"EUR" });
+  const pvpDe = p => p.pvp != null ? p.pvp : (p.cn && catByCn.get(p.cn)?.pvp != null ? catByCn.get(p.cn).pvp : null);
   const codTipo = t => { const s = norm(t); return /para/.test(s) ? "para" : /esp|medic/.test(s) ? "esp" : ""; };
 
   // ---------- comunicación con el script de Google ----------
@@ -453,10 +469,10 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
       { id:"marta", nombre:"Marta Ruiz", pin:"2468", activo:true, responsable:false },
     ];
     d.catalogo = [
-      ["654321","IBUPROFENO CINFA 600 MG 40 COMP","esp"], ["712345","OMEPRAZOL NORMON 20 MG 28 CAPS","esp"],
-      ["698745","PARACETAMOL KERN 1 G 40 COMP","esp"], ["661234","ENALAPRIL STADA 20 MG 28 COMP","esp"],
-      ["153427","ISDIN FUSION WATER 50 ML","para"], ["187654","CERAVE CREMA HIDRATANTE 454 G","para"],
-      ["172839","LACTOFLORA PROTECTOR 20 CAPS","para"], ["165432","SUERO FISIOLOGICO 30 MONODOSIS","para"],
+      ["654321","IBUPROFENO CINFA 600 MG 40 COMP","esp",2.5], ["712345","OMEPRAZOL NORMON 20 MG 28 CAPS","esp",2.06],
+      ["698745","PARACETAMOL KERN 1 G 40 COMP","esp",2.15], ["661234","ENALAPRIL STADA 20 MG 28 COMP","esp",2.45],
+      ["153427","ISDIN FUSION WATER 50 ML","para",24.95], ["187654","CERAVE CREMA HIDRATANTE 454 G","para",17.9],
+      ["172839","LACTOFLORA PROTECTOR 20 CAPS","para",15.5], ["165432","SUERO FISIOLOGICO 30 MONODOSIS","para",4.2],
     ];
     const ej = [ // [cn, veces en 90 días, motivos posibles]
       ["654321", 7, ["nostock","nostock","insuf"]], ["153427", 5, ["nostock"]], ["712345", 4, ["insuf","insuf","error"]],
@@ -498,11 +514,11 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
           const p = d.equipo.find(x => x.activo && demoToken(x) === op.t); if (!p) { rechazadas++; continue; }
           if (op.tipo === "apuntar") {
             if (d.anot.some(x => x[0] === op.id)) { hechas++; continue; }
-            if (!d.productos.some(x => x[0] === op.clave)) d.productos.push([op.clave, op.nombre || "", op.cn || "", op.tipoProd || "", "nuevo", ""]);
+            if (!d.productos.some(x => x[0] === op.clave)) d.productos.push([op.clave, op.nombre || "", op.cn || "", op.tipoProd || "", "nuevo", "", ""]);
             d.anot.push([op.id, op.ts, op.clave, op.motivo, p.id, op.mostrador || ""]); hechas++;
           } else if (op.tipo === "quitar") { d.anot = d.anot.filter(x => x[0] !== op.id); hechas++; }
           else if (op.tipo === "producto") {
-            const row = [op.clave, op.nombre, op.cn, op.tipoProd || "", op.estado, op.nota || ""];
+            const row = [op.clave, op.nombre, op.cn, op.tipoProd || "", op.estado, op.nota || "", op.pvp ?? ""];
             const i = d.productos.findIndex(x => x[0] === op.clave); if (i >= 0) d.productos[i] = row; else d.productos.push(row); hechas++;
           } else rechazadas++;
         }
@@ -530,7 +546,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
         d.equipo = d.equipo.filter(x => x.id !== p.id); return fin({ ok:true });
       }
       case "ajustes": quien(true); d.ajustes.umbral = Math.max(1, Math.min(99, parseInt(r.umbral, 10) || 3)); if (r.minutos != null) d.ajustes.minutos = Math.max(0, Math.min(600, parseInt(r.minutos, 10) || 0)); return fin({ ok:true });
-      case "cargarCatalogo": quien(true); d.catalogo = (r.items || []).map(x => [x[0], x[1], x[2] || ""]); return fin({ ok:true, n:d.catalogo.length });
+      case "cargarCatalogo": quien(true); d.catalogo = (r.items || []).map(x => [x[0], x[1], x[2] || "", x[3] ?? ""]); return fin({ ok:true, n:d.catalogo.length });
       case "borrarCatalogo": quien(true); d.catalogo = []; return fin({ ok:true });
     }
     throw new Error("Acción desconocida: " + r.a);
@@ -574,7 +590,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
     equipo = {}; base.equipo.forEach(p => equipo[p.id] = p);
     antiguos = base.antiguos || {};
     ajustes = { umbral:3, minutos:0, ...(base.ajustes || {}) };
-    for (const [clave, nombre, cn, tipo, estado, nota] of base.productos) productos.set(clave, { nombre, cn, tipo, estado: ESTADOS[estado] ? estado : "nuevo", nota, veces:[] });
+    for (const [clave, nombre, cn, tipo, estado, nota, pvp] of base.productos) productos.set(clave, { nombre, cn, tipo, estado: ESTADOS[estado] ? estado : "nuevo", nota, pvp: aPvp(pvp), veces:[] });
     const ids = new Set();
     for (const [id, t, clave, m, v, o] of base.anot) { const p = productos.get(clave); if (p) { p.veces.push({ id, t, m, v, o }); ids.add(id); } }
     for (const op of cola) aplicarLocal(op, ids);
@@ -589,7 +605,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
       for (const p of productos.values()) { const i = p.veces.findIndex(e => e.id === op.id); if (i >= 0) { p.veces.splice(i, 1); break; } }
     } else if (op.tipo === "producto") {
       const p = productos.get(op.clave) || { veces:[] };
-      Object.assign(p, { nombre: op.nombre, cn: op.cn, tipo: op.tipoProd, estado: op.estado, nota: op.nota });
+      Object.assign(p, { nombre: op.nombre, cn: op.cn, tipo: op.tipoProd, estado: op.estado, nota: op.nota, pvp: aPvp(op.pvp) });
       productos.set(op.clave, p);
     }
   }
@@ -617,9 +633,11 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
     } finally { refrescando = false; }
   }
   async function cargarCatalogoRemoto(){
-    try { const r = await api("catalogo"); catalogo = r.items || []; ls.set("faltas-catalogo", JSON.stringify(catalogo)); indexarCatalogo(); renderAll(); } catch {}
+    try { const r = await api("catalogo"); catalogo = r.items || []; guardarCacheCatalogo(); indexarCatalogo(); renderAll(); } catch {}
   }
-  function indexarCatalogo(){ catByCn.clear(); for (const [cn, nm, tp] of catalogo) catByCn.set(cn, { nombre: nm, tipo: tp || "" }); }
+  // En la demostración el listado ya va dentro de los datos de prueba: no se guarda dos veces (el navegador tiene poco espacio)
+  function guardarCacheCatalogo(){ if (cfg.demo) ls.set("faltas-catalogo", null); else ls.set("faltas-catalogo", JSON.stringify(catalogo)); }
+  function indexarCatalogo(){ catByCn.clear(); for (const [cn, nm, tp, pv] of catalogo) catByCn.set(cn, { nombre: nm, tipo: tp || "", pvp: aPvp(pv) }); }
 
   // ---------- teclado de PIN en pantalla (como en el Registro horario) ----------
   let P = null;   // {digits, onPin}
@@ -794,7 +812,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
   }
   function guardarProducto(key){
     const p = productos.get(key); if (!p || !turno) return;
-    encolar({ tipo:"producto", clave:key, nombre:p.nombre, cn:p.cn, tipoProd:p.tipo || "", estado:p.estado, nota:p.nota || "", t: turno.t }); renovar();
+    encolar({ tipo:"producto", clave:key, nombre:p.nombre, cn:p.cn, tipoProd:p.tipo || "", estado:p.estado, nota:p.nota || "", pvp: p.pvp ?? "", t: turno.t }); renovar();
   }
   function showNeedName(on, texto){
     $("needName").classList.toggle("hidden", !on);
@@ -813,7 +831,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
   const pill = e => `<span class="pill p-${e||"nuevo"}">${ESTADOS[e||"nuevo"]}</span>`;
   const tipoTag = t => t ? `<span class="mot t-${t}">${TIPOS[t]}</span>` : "";
   const estadoSelect = (key, e) => `<select data-estado="${esc(key)}" ${turno?"":"disabled title='Pon tu PIN para cambiarlo'"}>${Object.entries(ESTADOS).map(([v,l]) => `<option value="${v}" ${v===(e||"nuevo")?"selected":""}>${l}</option>`).join("")}</select>`;
-  const prodCell = (p, k) => `<div class="name">${esc(p.nombre)}</div><div class="cn">${p.cn ? "CN "+esc(p.cn) : (String(k||"").startsWith("ean-") ? "Código " + esc(k.slice(4)) : "sin CN")}${p.nota ? " · "+esc(p.nota) : ""}</div>`;
+  const prodCell = (p, k) => `<div class="name">${esc(p.nombre)}</div><div class="cn">${p.cn ? "CN "+esc(p.cn) : (String(k||"").startsWith("ean-") ? "Código " + esc(k.slice(4)) : "sin CN")}${pvpDe(p) != null ? " · PVP " + eur(pvpDe(p)) : ""}${p.nota ? " · "+esc(p.nota) : ""}</div>`;
   const motTags = cnt => Object.keys(MOTIVOS).filter(k => cnt[k]).map(k => `<span class="mot m-${k}" title="${esc(MOTIVOS[k].l)}">${MOTIVOS[k].c} ${cnt[k]}</span>`).join("");
 
   function renderHoy(){
@@ -851,9 +869,11 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
       const est = p.estado || "nuevo";
       const sug = nSug >= ajustes.umbral && (est === "nuevo" || (est === "stock" && (mot.insuf||0) >= ajustes.umbral));
       if (fe === "sug" ? !sug : (fe && est !== fe)) continue;
-      out.push({ k, p, n: v.length, dias: new Set(v.map(isoDay)).size, last: Math.max(...v), sug, mot, quien });
+      const pv = pvpDe(p);
+      out.push({ k, p, n: v.length, dias: new Set(v.map(isoDay)).size, last: Math.max(...v), sug, mot, quien, pvp: pv, perdido: pv != null ? Math.round(pv * v.length * 100) / 100 : null });
     }
-    out.sort((a,b) => b.n - a.n || b.last - a.last);
+    if ($("fOrden").value === "euros") out.sort((a,b) => (b.perdido ?? -1) - (a.perdido ?? -1) || b.n - a.n);
+    else out.sort((a,b) => b.n - a.n || b.last - a.last);
     return out;
   }
 
@@ -864,11 +884,12 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
       <div class="stat"><b>${totalVeces}</b><span>veces que nos han pedido algo que no teníamos</span></div>
       <div class="stat"><b>${rows.length}</b><span>productos distintos</span></div>
       <div class="stat"><b>${rows.filter(r => r.sug).length}</b><span>sugeridos (≥ ${ajustes.umbral} veces sin stock o stock corto)</span></div>
-      <div class="stat"><b>${rows.filter(r => r.p.estado === "pedir").length}</b><span>marcados para pedir</span></div>`;
+      <div class="stat"><b>${rows.filter(r => r.p.estado === "pedir").length}</b><span>marcados para pedir</span></div>
+      <div class="stat"><b>${eur(rows.reduce((s,r) => s + (r.perdido || 0), 0)) || "0,00 €"}</b><span>de venta que no se hizo (veces × PVP${rows.some(r => r.pvp == null) ? "; hay productos sin PVP" : ""})</span></div>`;
     $("tRank").innerHTML = rows.length ? rows.map((r,i) => `
       <tr class="${r.sug ? "hot" : ""}"><td class="mini">${i+1}</td>
       <td>${prodCell(r.p, r.k)}<div>${tipoTag(r.p.tipo)}${motTags(r.mot)}</div><div>${Object.entries(r.quien).sort((a,b) => b[1]-a[1]).map(([v,n]) => pinTag(v, n)).join("")} <button class="linkbtn" data-hist="${esc(r.k)}" type="button">ver historial</button></div>${r.sug ? `<span class="pill sug" style="margin-top:4px">${r.p.estado === "stock" ? "Sugerido: subir el stock" : "Sugerido: valorar tenerlo"}</span>` : ""}</td>
-      <td class="num"><span class="count">${r.n}</span></td>
+      <td class="num"><span class="count">${r.n}</span>${r.perdido != null ? `<div class="mini">${eur(r.perdido)}</div>` : ""}</td>
       <td class="num hide-m">${r.dias}</td>
       <td class="hide-m mini">${fmtDate(r.last)}</td>
       <td>${estadoSelect(r.k, r.p.estado)}</td></tr>`).join("")
@@ -928,7 +949,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
   function renderAjustes(){
     if (document.activeElement !== $("umbral")) $("umbral").value = ajustes.umbral;
     if (document.activeElement !== $("minutos")) $("minutos").value = ajustes.minutos;
-    $("catInfo").textContent = catalogo.length ? `Listado cargado: ${catalogo.length} referencias.` : "No hay listado cargado. La app funciona igual sin él.";
+    $("catInfo").textContent = catalogo.length ? `Listado cargado: ${catalogo.length} referencias, ${catalogo.filter(x => aPvp(x[3]) != null).length} con PVP.` : "No hay listado cargado. La app funciona igual sin él.";
   }
 
   function eqUI(){
@@ -1027,6 +1048,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
       <label class="f">CN</label><input id="eCn" value="${esc(p.cn)}" inputmode="numeric">
       <label class="f">Tipo</label><select id="eTipo"><option value="">Sin clasificar</option>${Object.entries(TIPOS).map(([v,l]) => `<option value="${v}" ${v===p.tipo?"selected":""}>${l}</option>`).join("")}</select>
       <label class="f">Estado</label><select id="eEst">${Object.entries(ESTADOS).map(([v,l]) => `<option value="${v}" ${v===(p.estado||"nuevo")?"selected":""}>${l}</option>`).join("")}</select>
+      <label class="f">PVP (€)${p.pvp == null && pvpDe(p) != null ? ` · del listado: ${eur(pvpDe(p))}` : ""}</label><input id="ePvp" inputmode="decimal" placeholder="${pvpDe(p) != null ? String(pvpDe(p)).replace(".", ",") : "Ej. 12,50"}" value="${p.pvp != null ? String(p.pvp).replace(".", ",") : ""}">
       <label class="f">Nota (laboratorio, proveedor, si es de encargo…)</label><input id="eNota" value="${esc(p.nota)}">
       <div class="mini" style="margin-top:10px">Apuntado ${p.veces.length} ${p.veces.length===1?"vez":"veces"} en total.</div>
       <div class="row" style="margin-top:14px;justify-content:space-between">
@@ -1040,7 +1062,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
     $("eCancel").onclick = close;
     $("eOk").onclick = () => {
       p.nombre = $("eNom").value.trim() || p.nombre; p.cn = cleanCn($("eCn").value);
-      p.tipo = $("eTipo").value; p.estado = $("eEst").value; p.nota = $("eNota").value.trim();
+      p.tipo = $("eTipo").value; p.estado = $("eEst").value; p.nota = $("eNota").value.trim(); p.pvp = aPvp($("ePvp").value);
       guardarProducto(key); close(); renderAll(); toast("Guardado");
     };
     if ($("eDel")) {
@@ -1053,18 +1075,42 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
   }
 
   // ---------- catálogo ----------
+  // Archivo de precios: busca en la cabecera las columnas de CN, nombre y precio (Nomenclátor, Farmatic, distribuidor…)
+  function parsePrecios(text){
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (!lines.length) return [];
+    const sep = (lines[0].match(/\t/g)||[]).length > 1 ? "\t" : (lines[0].match(/;/g)||[]).length > (lines[0].match(/,/g)||[]).length ? ";" : ",";
+    const split = l => { const out = []; let cur = "", q = false; for (let i = 0; i < l.length; i++) { const c = l[i]; if (q) { if (c === '"') { if (l[i+1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; } else if (c === '"') q = true; else if (c === sep) { out.push(cur.trim()); cur = ""; } else cur += c; } out.push(cur.trim()); return out; };
+    const head = split(lines[0]).map(norm);
+    const idx = re => head.findIndex(h => re.test(h));
+    let iCn = idx(/codigo nacional|^cn$|^c\.?n\.?$|cod.*nac|^codigo$/), iNom = idx(/nombre del producto|descripcion|^nombre|denominacion|articulo/);
+    let iP = idx(/precio venta al publico con iva|pvp.*iva|^pvp|p\.v\.p|precio venta|precio/);
+    const iT = idx(/^tipo$|familia|tipo de farmaco/);
+    const conCabecera = iCn >= 0 && iP >= 0;
+    const out = [];
+    for (const l of lines.slice(conCabecera ? 1 : 0)) {
+      const f = split(l);
+      let cn, nom, pvp, tipo = "";
+      if (conCabecera) { cn = parseCn(f[iCn] || "") || cleanCn(f[iCn]); nom = iNom >= 0 ? f[iNom] : ""; pvp = aPvp(f[iP]); if (iT >= 0) tipo = codTipo(f[iT]); }
+      else { const r = parseCatalogo(l)[0]; if (!r) continue; [cn, nom, tipo, pvp] = r; }
+      if (cn && cn.length === 6 && pvp != null) out.push([cn, nom || "", tipo || "", pvp]);
+    }
+    return out;
+  }
+
   function parseCatalogo(text){
     const out = [], seen = new Set();
     for (const line of text.split(/\r?\n/)) {
       if (!line.trim()) continue;
       const cols = line.split(/\t|;|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, "").trim());
-      let cn = null, nombre = null, tipo = "";
+      let cn = null, nombre = null, tipo = "", pvp = null;
       for (const c of cols) {
         if (!cn && /^\d{6,13}([.\-]\d)?$/.test(c.replace(/\s/g,""))) cn = parseCn(c) || cleanCn(c);
         else if (!tipo && nombre && codTipo(c) && c.length < 30) tipo = codTipo(c);
         else if (!nombre && c && /[a-zA-Z]/.test(c)) nombre = c;
+        else if (pvp == null && nombre && /^\d{1,5}([.,]\d{1,2})?\s*€?$/.test(c)) pvp = aPvp(c);
       }
-      if (cn && nombre && !seen.has(cn)) { seen.add(cn); out.push([cn, nombre, tipo]); }
+      if (cn && nombre && !seen.has(cn)) { seen.add(cn); out.push([cn, nombre, tipo, pvp]); }
     }
     return out;
   }
@@ -1105,14 +1151,15 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
   for (const id of ["dFrom","dTo"]) $(id).addEventListener("change", () => { periodo = { dias:"custom", from:$("dFrom").value, to:$("dTo").value }; renderRanking(); });
   $("motivo").innerHTML = Object.entries(MOTIVOS).map(([k,x]) => `<option value="${k}">${x.l}</option>`).join("");
   $("fMotivo").innerHTML += Object.entries(MOTIVOS).map(([k,x]) => `<option value="${k}">${x.l}</option>`).join("");
-  for (const id of ["fEstado","fMotivo","fTipo"]) $(id).addEventListener("change", renderRanking);
+  for (const id of ["fEstado","fMotivo","fTipo","fOrden"]) $(id).addEventListener("change", renderRanking);
   $("fTexto").addEventListener("input", renderRanking);
   $("pTexto").addEventListener("input", renderProductos);
 
   $("bCopy").onclick = async () => {
     const rows = rankingRows(), mk = Object.keys(MOTIVOS);
-    const txt = [["CN","Producto","Tipo","Veces","Días distintos","Última vez","Estado", ...mk.map(k => MOTIVOS[k].c), "Nota"].join("\t"),
-      ...rows.map(r => [r.p.cn, r.p.nombre, TIPOS[r.p.tipo] || "", r.n, r.dias, fmtDate(r.last), ESTADOS[r.p.estado||"nuevo"], ...mk.map(k => r.mot[k]||0), r.p.nota||""].join("\t"))].join("\n");
+    const num = x => x == null ? "" : String(x).replace(".", ",");
+    const txt = [["CN","Producto","Tipo","Veces","Días distintos","Última vez","Estado","PVP","Venta perdida", ...mk.map(k => MOTIVOS[k].c), "Nota"].join("\t"),
+      ...rows.map(r => [r.p.cn, r.p.nombre, TIPOS[r.p.tipo] || "", r.n, r.dias, fmtDate(r.last), ESTADOS[r.p.estado||"nuevo"], num(r.pvp), num(r.perdido), ...mk.map(k => r.mot[k]||0), r.p.nota||""].join("\t"))].join("\n");
     try { await navigator.clipboard.writeText(txt); toast(`Copiadas ${rows.length} filas: pégalas en Excel`); }
     catch { toast("No se pudo copiar en este navegador"); }
   };
@@ -1205,10 +1252,36 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
     const items = parseCatalogo($("catTxt").value);
     if (!items.length) { toast("No encuentro filas con CN y nombre"); return; }
     if (items.length > 60000) { toast("Demasiadas filas (máx. 60.000)"); return; }
+    for (const it of items) if (it[3] == null && catByCn.get(it[0])?.pvp != null) it[3] = catByCn.get(it[0]).pvp;   // conserva precios ya cargados
     $("bCat").disabled = true; $("catInfo").textContent = `Cargando ${items.length} referencias…`;
-    try { const r = await apiAdmin("cargarCatalogo", { items }); catalogo = items; ls.set("faltas-catalogo", JSON.stringify(catalogo)); indexarCatalogo(); $("catTxt").value = ""; toast(`Listado cargado: ${r.n} referencias`); renderAll(); }
+    try { const r = await apiAdmin("cargarCatalogo", { items }); catalogo = items; guardarCacheCatalogo(); indexarCatalogo(); $("catTxt").value = ""; toast(`Listado cargado: ${r.n} referencias`); renderAll(); }
     catch (err) { toast(err.message); }
     $("bCat").disabled = false; renderAjustes();
+  };
+  $("bPvp").onclick = async () => {
+    const f = $("pvpFile").files[0]; if (!f) { toast("Elige primero el archivo de precios"); return; }
+    let txt = await f.text();
+    if (txt.includes(String.fromCharCode(0xFFFD))) txt = new TextDecoder("windows-1252").decode(await f.arrayBuffer());
+    const filas = parsePrecios(txt);
+    if (!filas.length) { $("pvpInfo").textContent = "No encuentro en el archivo una columna de código nacional y otra de precio."; return; }
+    const tipoNuevo = $("pvpTipo").value;
+    const mapa = new Map(catalogo.map(it => [it[0], [it[0], it[1], it[2] || "", it[3] ?? null]]));
+    let act = 0, nuevos = 0;
+    for (const [cn, nom, tipo, pvp] of filas) {
+      const it = mapa.get(cn);
+      if (it) { it[3] = pvp; if (!it[2] && (tipo || tipoNuevo)) it[2] = tipo || tipoNuevo; act++; }
+      else if (nom) { mapa.set(cn, [cn, nom, tipo || tipoNuevo || "", pvp]); nuevos++; }
+    }
+    const items = [...mapa.values()];
+    if (items.length > 60000) { toast("Demasiadas referencias (máx. 60.000)"); return; }
+    $("bPvp").disabled = true; $("pvpInfo").textContent = `Guardando precios de ${filas.length} referencias…`;
+    try {
+      await apiAdmin("cargarCatalogo", { items });
+      catalogo = items; guardarCacheCatalogo(); indexarCatalogo();
+      $("pvpInfo").textContent = `Precios cargados: ${act} referencias actualizadas${nuevos ? ` y ${nuevos} nuevas añadidas al listado` : ""}.`;
+      $("pvpFile").value = ""; renderAll();
+    } catch (err) { $("pvpInfo").textContent = err.message; }
+    $("bPvp").disabled = false; renderAjustes();
   };
   $("bCatDel").onclick = async () => {
     const b = $("bCatDel");
