@@ -635,9 +635,15 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
       else { setStatus("err", "Error"); banner(e.message); errorBanner = true; }
     } finally { refrescando = false; }
   }
+  var catErr = "";
   async function cargarCatalogoRemoto(){
-    try { const r = await api("catalogo"); catalogo = r.items || []; guardarCacheCatalogo(); indexarCatalogo(); renderAll(); } catch {}
+    if (cargandoCat) return; cargandoCat = true;
+    try { const r = await api("catalogo"); catalogo = r.items || []; catErr = ""; try { ls.set("faltas-catalogo", cfg.demo ? null : JSON.stringify(catalogo)); } catch {} indexarCatalogo(); renderAll(); }
+    catch (e) { catErr = (e && e.message) || String(e); try { renderAjustes(); } catch {} }
+    finally { cargandoCat = false; }
   }
+  var cargandoCat = false;
+  setInterval(() => { try { if (!cfg.demo && conectado() && !catalogo.length) cargarCatalogoRemoto(); } catch {} }, 30000);
   // En la demostración el listado ya va dentro de los datos de prueba: no se guarda dos veces (el navegador tiene poco espacio)
   function guardarCacheCatalogo(){ if (cfg.demo) ls.set("faltas-catalogo", null); else ls.set("faltas-catalogo", JSON.stringify(catalogo)); }
   function indexarCatalogo(){ catByCn.clear(); for (const [cn, nm, tp, pv] of catalogo) catByCn.set(cn, { nombre: nm, tipo: tp || "", pvp: aPvp(pv) }); }
@@ -952,7 +958,7 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
   function renderAjustes(){
     if (document.activeElement !== $("umbral")) $("umbral").value = ajustes.umbral;
     if (document.activeElement !== $("minutos")) $("minutos").value = ajustes.minutos;
-    $("catInfo").textContent = catalogo.length ? `Listado cargado: ${catalogo.length} referencias, ${catalogo.filter(x => aPvp(x[3]) != null).length} con PVP.` : "No hay listado cargado. La app funciona igual sin él.";
+    $("catInfo").textContent = catalogo.length ? `Listado cargado: ${catalogo.length} referencias, ${catalogo.filter(x => aPvp(x[3]) != null).length} con PVP.` : (catErr ? "No se ha podido descargar el listado (" + catErr + "). Se vuelve a intentar solo cada 30 segundos." : "No hay listado cargado todavía. Se descarga solo al abrir la app (puede tardar unos segundos).");
   }
 
   function eqUI(){
