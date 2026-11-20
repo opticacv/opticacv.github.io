@@ -104,6 +104,7 @@
   @media (max-width:640px){ .hide-m{display:none} th,td{padding:8px 5px} }
   @keyframes flash{0%{background:var(--acc-fill)}100%{background:transparent}}
   tr.flash td{animation:flash 1.8s ease-out}
+  select.flash{animation:flash 1.5s ease-out;outline:3px solid var(--acc);outline-offset:1px}
   .scrim{position:fixed;inset:0;background:rgba(15,23,28,.55);display:grid;place-items:center;z-index:40;padding:16px}
   .pinbox{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;width:min(360px,100%);display:flex;flex-direction:column;gap:14px;align-items:stretch;box-shadow:0 20px 50px rgba(0,0,0,.25)}
   .pinbox h2{font:700 20px/1.2 var(--display);text-align:center;margin:0}
@@ -207,7 +208,7 @@
         <button class="btn ghost" id="bNameSkip" type="button">Solo el CN</button>
       </div>
       <datalist id="dl"></datalist>
-      <div class="hint" id="hintTurno">El vendedor pone su PIN una vez y todo lo que apunte queda a su nombre. Cuando cambie la persona del mostrador, el que llega pulsa «Cambiar de vendedor» y teclea su PIN: no hace falta que el anterior salga. Si el producto ya está apuntado, se suma una vez más. Con lector de códigos, escanea directamente en el campo.</div>
+      <div class="hint" id="hintTurno">El vendedor pone su PIN una vez y todo lo que apunte queda a su nombre. Cuando cambie la persona del mostrador, el que llega pulsa «Cambiar de vendedor» y teclea su PIN: no hace falta que el anterior salga. Si el producto ya está apuntado, se suma una vez más. Con lector de códigos: escanea, elige el motivo y pulsa «Apuntar».</div>
     </div>
 
     <div class="card">
@@ -1126,7 +1127,21 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxMYRAdM4Wt8oOjkTvSg
 
   // ---------- eventos ----------
   $("nav").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; mostrarVista(b.dataset.v); if (b.dataset.v === "apuntar") $("qIn").focus(); });
-  $("fApuntar").addEventListener("submit", e => { e.preventDefault(); apuntar($("qIn").value); });
+  let porEnter = false;
+  $("qIn").addEventListener("keydown", e => { if (e.key === "Enter") porEnter = true; });
+  $("fApuntar").addEventListener("submit", e => {
+    e.preventDefault();
+    const v = $("qIn").value.trim(), enter = porEnter; porEnter = false;
+    // Lector de códigos (o CN tecleado + Intro): no se apunta aún; se muestra el producto y se espera a elegir motivo
+    if (enter && /^\d{6,14}$/.test(v.replace(/[\s.\-]/g, ""))) {
+      const cn = parseCn(v), c = cn && catByCn.get(cn);
+      if (c) $("qIn").value = `${c.nombre} — CN ${cn}`;
+      $("motivo").focus(); $("motivo").classList.add("flash"); setTimeout(() => $("motivo").classList.remove("flash"), 1500);
+      toast((c ? c.nombre + ". " : "") + "Elige el motivo y pulsa Apuntar");
+      return;
+    }
+    apuntar($("qIn").value);
+  });
   $("qIn").addEventListener("input", () => { clearTimeout(dlTimer); dlTimer = setTimeout(renderDatalist, 120); });
   $("bNameOk").onclick = () => { const n = $("nameIn").value.trim(); if (!n) return; showNeedName(false); sumar(null, { cn: pendingCn, nombre: n, tipo: $("tipoIn").value }); pendingCn = null; pendingEan = null; $("qIn").value = ""; };
   $("nameIn").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("bNameOk").click(); } });
